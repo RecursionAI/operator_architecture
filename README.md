@@ -2,16 +2,14 @@
 
 **Framework-agnostic multi-agent orchestration SDK.**
 
-Operator Architecture (OA) manages **state**, **context**, **sub-agents**, and **orchestration**. It does **not** call LLMs, run tool loops, or ship coding tools. You plug in any agent runtime — Relay, LangChain, OpenAI Agents, HTTP services, or a plain async function.
-
-For the earlier coding-CLI / five-pillars vision, see [ORIGINAL_CONCEPT.md](ORIGINAL_CONCEPT.md).
+Operator Architecture (OA) manages **state**, **context**, **sub-agents**, and **orchestration**. It is compatible with any agent runtime — Relay, LangChain, OpenAI Agents, HTTP services, or a plain async function.
 
 ## Install
 
 ```bash
-pip install -e .
+uv add install operator-architecture
 # or
-uv pip install -e .
+pip install operator-architecture
 ```
 
 Runtime dependencies: **none** (stdlib only).
@@ -195,12 +193,6 @@ class RelayRunner:
 ## Example
 
 See [`examples/minimal_callable.py`](examples/minimal_callable.py).
-
-## Design boundaries
-
-- **Not** a coding CLI or competitor to Cursor/Claude Code
-- **Not** an inference or tool-loop SDK (use Courier OS, encode, agentloop, LangChain, …)
-- **Not** coupled to AXE or Courier OS — hosts may wrap them as runners
 
 ## License / status
 

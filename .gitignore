@@ -13,3 +13,5 @@ wheels/
 .idea/
 .vscode/
 *.iml
+
+MEMORY.md
