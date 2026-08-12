@@ -7,7 +7,7 @@ Operator Architecture (OA) manages **state**, **context**, **sub-agents**, and *
 ## Install
 
 ```bash
-uv add install operator-architecture
+uv add operator-architecture
 # or
 pip install operator-architecture
 ```
