@@ -13,6 +13,7 @@ from operator_architecture.agent import (
     AgentSpec,
     ObjectiveSlot,
 )
+from operator_architecture.coerce import coerce_agent_props, coerce_checklist, coerce_index
 from operator_architecture.coordinator import Coordinator
 from operator_architecture.messages import Messages
 from operator_architecture.orchestration import attach_schema, openai_tool_schema, tool_schemas
@@ -99,12 +100,18 @@ class StateMachine:
                 )
         return rows
 
-    def get_agent_message(self, agent: str, index: int) -> dict[str, Any]:
+    def get_agent_message(self, agent: str, index: Any) -> dict[str, Any]:
         """Peek staged junior prose without accepting it."""
-        slot = self.agent(agent)[index]
+        if agent not in self._agents:
+            return {"error": "unknown_agent", "agent": agent}
+        try:
+            idx = coerce_index(index)
+            slot = self.agent(agent)[idx]
+        except (ValueError, IndexError) as exc:
+            return {"error": "bad_index", "detail": str(exc)}
         return {
             "agent": agent,
-            "index": index,
+            "index": idx,
             "status": slot.status,
             "agent_message": slot.agent_message,
             "objective": slot.objective,
@@ -116,8 +123,8 @@ class StateMachine:
         self,
         agent: str,
         objective: str,
-        checklist: list[str] | None = None,
-        agent_props: dict[str, Any] | None = None,
+        checklist: list[str] | str | None = None,
+        agent_props: dict[str, Any] | str | None = None,
         *,
         streaming_callback: StreamingCallback = None,
     ) -> dict[str, Any]:
@@ -125,6 +132,11 @@ class StateMachine:
         goal = (objective or "").strip()
         if not goal:
             return {"error": "missing_objective", "detail": "objective is required."}
+        try:
+            checklist = coerce_checklist(checklist)
+            agent_props = coerce_agent_props(agent_props)
+        except ValueError as exc:
+            return {"error": "bad_args", "detail": str(exc)}
 
         handle = self.agent(agent)
         slot = handle.create_objective(
@@ -155,7 +167,7 @@ class StateMachine:
     async def instruct(
         self,
         agent: str,
-        index: int,
+        index: Any,
         message: str,
         *,
         streaming_callback: StreamingCallback = None,
@@ -164,10 +176,13 @@ class StateMachine:
         text = (message or "").strip()
         if not text:
             return {"error": "empty_message"}
+        if agent not in self._agents:
+            return {"error": "unknown_agent", "agent": agent}
         handle = self.agent(agent)
         try:
-            slot = handle[index]
-        except IndexError as exc:
+            idx = coerce_index(index)
+            slot = handle[idx]
+        except (ValueError, IndexError) as exc:
             return {"error": "bad_index", "detail": str(exc)}
 
         slot.messages.append({"role": "user", "content": text})
@@ -176,32 +191,40 @@ class StateMachine:
         cb = streaming_callback or self._streaming_callback
         return await self._run_slot(handle, slot, streaming_callback=cb)
 
-    def accept(self, agent: str, index: int) -> dict[str, Any]:
+    def accept(self, agent: str, index: Any) -> dict[str, Any]:
         """Accept staged result into the coordinator core thread (compact)."""
         return self.accept_agent_result(agent, index)
 
-    def accept_agent_result(self, agent: str, index: int) -> dict[str, Any]:
-        """Attach compact slot.result onto coordinator messages context."""
+    def accept_agent_result(self, agent: str, index: Any) -> dict[str, Any]:
+        """Attach slot.result onto coordinator messages context."""
         if agent not in self._agents:
             return {"error": "unknown_agent", "agent": agent}
         try:
-            slot = self.agent(agent)[index]
-        except IndexError as exc:
+            idx = coerce_index(index)
+            slot = self.agent(agent)[idx]
+        except (ValueError, IndexError) as exc:
             return {"error": "bad_index", "detail": str(exc)}
 
         if slot.agent_message is None and slot.result is None:
-            return {"error": "nothing_staged", "agent": agent, "index": index}
+            return {"error": "nothing_staged", "agent": agent, "index": idx}
 
+        summary = slot.agent_message or ""
         compact = slot.result or {
             "status": "accepted",
             "agent": agent,
-            "index": index,
-            "report": (slot.agent_message or "")[:2000],
+            "index": idx,
+            "report": summary,
+            "summary": summary,
             "objective": slot.objective,
             "model": slot.model,
             "duration_ms": slot.duration_ms,
         }
-        compact = {**compact, "status": "accepted"}
+        compact = {
+            **compact,
+            "status": "accepted",
+            "report": compact.get("report") or summary,
+            "summary": compact.get("summary") or summary,
+        }
         slot.result = compact
         slot.status = "accepted"
 
@@ -210,7 +233,8 @@ class StateMachine:
         return {
             "status": "accepted",
             "agent": agent,
-            "index": index,
+            "index": idx,
+            "summary": summary,
             "result": compact,
         }
 
@@ -218,7 +242,7 @@ class StateMachine:
     async def instruct_agent(
         self,
         agent: str,
-        index: int,
+        index: Any,
         message: str,
         *,
         streaming_callback: StreamingCallback = None,
@@ -435,7 +459,8 @@ class StateMachine:
                 "status": "staged",
                 "agent": handle.name,
                 "index": slot.index,
-                "report": report[:2000],
+                "report": report,
+                "summary": report,
                 "duration_ms": duration_ms,
                 "model": slot.model,
                 "objective": slot.objective,
@@ -460,6 +485,7 @@ class StateMachine:
                 "agent": handle.name,
                 "index": slot.index,
                 "commission_id": slot.commission_id,
+                "summary": report,
                 "hint": (
                     f"Junior reply staged at sm.agent('{handle.name}')[{slot.index}].agent_message. "
                     f"Call accept_agent_result('{handle.name}', {slot.index}) to attach "
@@ -479,6 +505,7 @@ class StateMachine:
                 "agent": handle.name,
                 "index": slot.index,
                 "report": slot.agent_message,
+                "summary": slot.agent_message,
                 "duration_ms": duration_ms,
                 "model": slot.model,
                 "objective": slot.objective,
@@ -502,6 +529,7 @@ class StateMachine:
                 "agent": handle.name,
                 "index": slot.index,
                 "report": slot.agent_message,
+                "summary": slot.agent_message,
                 "duration_ms": duration_ms,
                 "model": slot.model,
             }

@@ -20,11 +20,10 @@ def openai_tool_schema(
     properties: dict[str, Any] = {}
     required: list[str] = []
 
-    hints = {}
     try:
-        hints = fn.__annotations__
+        hints = inspect.get_annotations(fn, eval_str=True)
     except Exception:
-        hints = {}
+        hints = dict(getattr(fn, "__annotations__", {}) or {})
 
     for pname, param in sig.parameters.items():
         if pname in {"self", "cls"}:

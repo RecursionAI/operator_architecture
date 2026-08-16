@@ -96,8 +96,28 @@ user → (optional) sm.run / host
      → commission(agent, objective)
          → AgentRunner.run(AgentRequest)
          → stage agent_message  (status=staged)
-     → accept_agent_result(agent, index)   # compact result for core thread
+         → tool result includes summary (full) + preview (first 400 chars)
+     → accept_agent_result(agent, index)   # same full summary, status=accepted
         or instruct_agent(agent, index, message)  # continue junior
+```
+
+The junior’s full session stays on the slot (`sm.agent(name)[index].messages`). Core context only sees what the **host** stores as the orchestration `role: "tool"` body. That body now carries `summary` (the full junior final message), so a normal tool loop does not truncate follow-up memory.
+
+### Tool args
+
+OpenAI schemas keep their intended types (`index` integer, `checklist` array, `agent_props` object). At runtime OA also accepts stringified LLM values (`"1"`, `"{\"k\": \"v\"}"`). Invalid values return `{ "error": ... }` instead of raising `TypeError`.
+
+### Tool result
+
+```python
+staged = await sm.commission("researcher", "Find all uses of vLLM")
+# staged["summary"]  == full agent_message (no cap)
+# staged["preview"]  == first 400 chars (short alias)
+# staged["status"]   == "staged"
+
+accepted = sm.accept("researcher", 1)   # index=1 and index="1" both work
+# accepted["summary"] == same full text
+# accepted["result"]["report"] == same full text
 ```
 
 ### Direct API (always available)

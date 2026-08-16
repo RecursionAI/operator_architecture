@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from operator_architecture.coerce import coerce_index
 from operator_architecture.streaming import StreamingCallback
 
 
@@ -97,13 +98,17 @@ class AgentHandle:
     def __len__(self) -> int:
         return len(self.slots)
 
-    def __getitem__(self, index: int) -> ObjectiveSlot:
-        if index < 1 or index > len(self.slots):
+    def __getitem__(self, index: Any) -> ObjectiveSlot:
+        try:
+            idx = coerce_index(index)
+        except ValueError as exc:
+            raise IndexError(str(exc)) from exc
+        if idx < 1 or idx > len(self.slots):
             raise IndexError(
                 f"{self.name} has {len(self.slots)} objectives; "
-                f"requested index {index} (1-based)"
+                f"requested index {idx} (1-based)"
             )
-        return self.slots[index - 1]
+        return self.slots[idx - 1]
 
     def next_index(self) -> int:
         return len(self.slots) + 1
