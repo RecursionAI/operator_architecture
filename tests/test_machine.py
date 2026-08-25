@@ -22,9 +22,22 @@ async def _research(request: AgentRequest) -> AgentResult:
     return AgentResult(content=LONG_REPORT + f"\nObjective: {request.objective}")
 
 
-def _sm() -> StateMachine:
+class _ToyCoordinator:
+    """Iterate OA tools once: commission → accept → reply."""
+
+    async def run(self, request: AgentRequest, *, streaming_callback=None) -> AgentResult:
+        _ = streaming_callback
+        tools = {fn.__name__: fn for fn in request.metadata["tools"]}
+        agents = await tools["list_agents"]()
+        name = agents[0]["name"]
+        staged = await tools["commission"](name, request.objective)
+        accepted = await tools["accept_agent_result"](name, staged["index"])
+        return AgentResult(content=accepted["summary"])
+
+
+def _sm(*, runner=None) -> StateMachine:
     return StateMachine(
-        coordinator=Coordinator(),
+        coordinator=Coordinator(runner=runner),
         agents=[
             AgentSpec(
                 name="researcher",
@@ -34,6 +47,16 @@ def _sm() -> StateMachine:
             )
         ],
     )
+
+
+def test_run_commissions_accepts_and_replies() -> None:
+    sm = _sm(runner=_ToyCoordinator())
+    reply = asyncio.run(sm.run("Map vLLM config"))
+    slot = sm.agent("researcher")[1]
+    assert slot.status == "accepted"
+    assert reply == slot.agent_message
+    assert LONG_REPORT in reply
+    assert "Map vLLM config" in reply
 
 
 def test_commission_summary_is_full_agent_message() -> None:

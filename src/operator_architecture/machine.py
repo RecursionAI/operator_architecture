@@ -260,10 +260,11 @@ class StateMachine:
         streaming_callback: StreamingCallback = None,
         orchestration_tools: bool = True,
     ) -> str:
-        """Append user text and invoke the coordinator runner (if configured).
+        """Run one full operator turn and return the coordinator's user-facing reply.
 
-        OA does not execute a tool loop. The host ``Coordinator.runner`` owns
-        inference/tool-calling and may call back into orchestration tools.
+        Appends ``user_text``, injects orchestration tools, and invokes
+        ``Coordinator.runner``. That runner must iterate tool calls
+        (commission / instruct / accept) until it can answer the user.
         """
         text = (user_text or "").strip()
         if not text:
