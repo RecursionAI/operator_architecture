@@ -17,7 +17,7 @@ review their staged messages before accepting results into the core conversation
 - `list_agents()` — discover registered agents
 - `commission(agent, objective, checklist=None, agent_props=None)` — run a junior
 - `get_agent_message(agent, index)` — peek staged junior prose
-- `accept_agent_result(agent, index)` — attach compact result to the core thread
+- `accept_agent_result(agent, index)` — attach the junior's final message (not its tool transcript)
 - `instruct_agent(agent, index, message)` — continue a junior objective
 - `list_objectives(agent=None)` — status board
 

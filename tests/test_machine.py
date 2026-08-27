@@ -66,7 +66,7 @@ def test_commission_summary_is_full_agent_message() -> None:
     assert full is not None
     assert len(full) > 400
     assert staged["summary"] == full
-    assert staged["preview"] == full[:400]
+    assert "preview" not in staged
     assert sm.agent("researcher")[1].result is not None
     assert sm.agent("researcher")[1].result["report"] == full
     assert sm.agent("researcher")[1].result["summary"] == full

@@ -112,7 +112,7 @@ You supply inference. OA supplies the orchestration tools the coordinator must c
 | `accept_agent_result(agent, index)` | Accept into the core thread |
 | `list_objectives(agent=None)` | Status board |
 
-`commission` / `instruct` return `summary` (full junior final message, no cap) plus `preview` (first 400 chars). OpenAI schemas keep native types (`index` integer, `checklist` array, `agent_props` object); at runtime OA also accepts stringified LLM values (`"1"`, `"{\"k\": \"v\"}"`). Invalid args return `{ "error": ... }` instead of raising.
+`commission` / `instruct` return `summary` (full junior final message, no cap). OpenAI schemas keep native types (`index` integer, `checklist` array, `agent_props` object); at runtime OA also accepts stringified LLM values (`"1"`, `"{\"k\": \"v\"}"`). Invalid args return `{ "error": ... }` instead of raising.
 
 Default coordinator skill already describes this loop. Override `Coordinator.skill` only if you need a different persona.
 

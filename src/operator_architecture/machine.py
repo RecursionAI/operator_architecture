@@ -192,7 +192,7 @@ class StateMachine:
         return await self._run_slot(handle, slot, streaming_callback=cb)
 
     def accept(self, agent: str, index: Any) -> dict[str, Any]:
-        """Accept staged result into the coordinator core thread (compact)."""
+        """Accept staged result into the coordinator core thread."""
         return self.accept_agent_result(agent, index)
 
     def accept_agent_result(self, agent: str, index: Any) -> dict[str, Any]:
@@ -490,9 +490,8 @@ class StateMachine:
                 "hint": (
                     f"Junior reply staged at sm.agent('{handle.name}')[{slot.index}].agent_message. "
                     f"Call accept_agent_result('{handle.name}', {slot.index}) to attach "
-                    f"the compact result to the core thread, or instruct_agent(...) to continue."
+                    f"the final message to the core thread, or instruct_agent(...) to continue."
                 ),
-                "preview": report[:400],
                 "duration_ms": duration_ms,
                 "model": slot.model,
             }
