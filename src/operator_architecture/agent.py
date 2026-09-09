@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from operator_architecture.coerce import coerce_index
 from operator_architecture.streaming import StreamingCallback
 
+SlotStatus = Literal["pending", "running", "staged", "accepted", "failed"]
 
-@dataclass
-class AgentRequest:
+
+class AgentRequest(BaseModel):
     """Input handed to a host ``AgentRunner`` when an objective is run."""
 
     agent: str
@@ -21,17 +23,16 @@ class AgentRequest:
     checklist: list[str] | None = None
     agent_props: dict[str, Any] | None = None
     model: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class AgentResult:
+class AgentResult(BaseModel):
     """Output from a host agent — staged onto the objective slot."""
 
     content: str
     messages: list[dict[str, Any]] | None = None
     usage: dict[str, Any] | None = None
-    raw: Any = None
+    raw: Any = Field(default=None, exclude=True)
 
 
 @runtime_checkable
@@ -46,46 +47,56 @@ class AgentRunner(Protocol):
     ) -> AgentResult: ...
 
 
-@dataclass
-class AgentSpec:
+class AgentSpec(BaseModel):
     """Register a named sub-agent with the state machine."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str
     description: str
     skill: str
-    runner: AgentRunner
+    runner: AgentRunner = Field(exclude=True)
+    runner_id: str | None = None
     model: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _default_runner_id(self) -> AgentSpec:
+        if not self.runner_id:
+            self.runner_id = self.name
+        return self
 
 
-@dataclass
-class ObjectiveSlot:
+class ObjectiveSlot(BaseModel):
     """One commissioned objective for a sub-agent."""
 
     index: int
     agent: str
     objective: str
-    checklist: list[str] = field(default_factory=list)
-    agent_props: dict[str, Any] = field(default_factory=dict)
-    messages: list[dict[str, Any]] = field(default_factory=list)
+    checklist: list[str] = Field(default_factory=list)
+    agent_props: dict[str, Any] = Field(default_factory=dict)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
     agent_message: str | None = None
     result: dict[str, Any] | None = None
-    status: str = "pending"  # pending | running | staged | accepted | failed
+    status: SlotStatus = "pending"
     model: str | None = None
     duration_ms: float | None = None
     commission_id: str = ""
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _default_commission_id(self) -> ObjectiveSlot:
         if not self.commission_id:
             self.commission_id = f"{self.agent}-{self.index}"
+        return self
 
 
-@dataclass
-class AgentHandle:
+class AgentHandle(BaseModel):
     """Runtime handle for one registered agent + its objective slots."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     spec: AgentSpec
-    slots: list[ObjectiveSlot] = field(default_factory=list)
+    slots: list[ObjectiveSlot] = Field(default_factory=list)
 
     @property
     def name(self) -> str:

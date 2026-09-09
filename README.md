@@ -4,7 +4,7 @@
 
 Operator Architecture (OA) manages **state**, **context**, **sub-agents**, and **orchestration**. The product API is one call: `await sm.run(user_text)`. That turn is the full agentic loop — the coordinator receives the user message, commissions sub-agents, instructs or accepts their work, and replies.
 
-Compatible with any agent runtime — Relay, LangChain, OpenAI Agents, HTTP services, or a plain async function. Runtime dependencies: **none** (stdlib only).
+Compatible with any agent runtime — Relay, LangChain, OpenAI Agents, HTTP services, or a plain async function. Runtime dependency: **Pydantic v2**.
 
 ## Install
 
@@ -165,27 +165,51 @@ Coordinator and junior threads are lists of chat.completions-style dicts:
 
 Helpers: `Messages` (`.system()`, `.user()`, `.assistant()`, `.to_list()`).
 
+## Serialize / rehydrate
+
+Data types (`AgentRequest`, `AgentResult`, `AgentSpec`, `Coordinator`, `ObjectiveSlot`, `AgentHandle`) are Pydantic v2 models. `StateMachine` is still the engine — snapshot it with helpers, then rebound host runners on load. **Runners, streaming callbacks, and orchestration-tool closures are never pickled.**
+
+```python
+from operator_architecture import (
+    StateMachine,
+    state_machine_to_json,
+    state_machine_from_json,
+)
+
+runners = {"coordinator": CoordinatorRunner(), "researcher": ResearchRunner()}
+blob = state_machine_to_json(sm)
+sm2 = state_machine_from_json(blob, runners=runners)
+```
+
+`sm.to_model()` / `StateMachine.from_model(model, *, runners=...)` are the same path without JSON. Snapshots include `schema_version` (currently `1`), coordinator persona and thread, `active_agent`, and each junior's spec + slots.
+
+Rebind keys with `runner_id` (defaults to the agent `name`; coordinator defaults to `"coordinator"` when a runner is set). Missing ids raise `KeyError`. Pass `coordinator_runner=` to override the mapping. Restore `streaming_callback` on load if you still want events; tools are rebuilt on the next `sm.run()`.
+
+Nested helpers: `agent_spec_to_model` / `agent_spec_from_model`, `coordinator_*`, `agent_handle_*`, `messages_*`. Snapshot models: `StateMachineModel`, `AgentSpecModel`, `CoordinatorModel`, `AgentHandleModel`, `ChatMessage` (`extra="allow"` so `tool_calls` survive).
+
 ## Appendix: SDK spec
 
-Public surface from `operator_architecture` (`__all__`). Field lists are constructor / dataclass args unless noted.
+Public surface from `operator_architecture` (`__all__`). Field lists are constructor / Pydantic fields unless noted.
 
 ### `Coordinator`
 
-Dataclass. Persona handed to `StateMachine`.
+Pydantic model. Persona handed to `StateMachine`.
 
 - `skill: str = DEFAULT_COORDINATOR_SKILL` — coordinator system prompt
-- `runner: AgentRunner | None = None` — required for `sm.run`
+- `runner: AgentRunner | None = None` — required for `sm.run`; excluded from dumps
+- `runner_id: str | None = None` — snapshot key; defaults to `"coordinator"` when `runner` is set
 - `model: str | None = None` — metadata only
 - `metadata: dict[str, Any] = {}` — merged into the coordinator `AgentRequest`
 
 ### `AgentSpec`
 
-Dataclass. Registers one junior.
+Pydantic model. Registers one junior.
 
 - `name: str` — unique; must not be `"coordinator"`
 - `description: str` — shown by `list_agents`
 - `skill: str` — junior system prompt
-- `runner: AgentRunner` — called on commission / instruct
+- `runner: AgentRunner` — called on commission / instruct; excluded from dumps
+- `runner_id: str | None = None` — snapshot key; defaults to `name`
 - `model: str | None = None` — metadata only
 - `metadata: dict[str, Any] = {}` — copied onto junior `AgentRequest`
 
@@ -204,7 +228,7 @@ async def run(
 
 ### `AgentRequest`
 
-Dataclass. Input to every runner.
+Pydantic model. Input to every runner.
 
 - `agent: str`
 - `objective: str`
@@ -217,12 +241,12 @@ Dataclass. Input to every runner.
 
 ### `AgentResult`
 
-Dataclass. Output from every runner.
+Pydantic model. Output from every runner.
 
 - `content: str` — user-facing reply (coordinator) or staged `agent_message` (junior)
 - `messages: list[dict[str, Any]] | None = None` — if set, replaces the thread
 - `usage: dict[str, Any] | None = None`
-- `raw: Any = None`
+- `raw: Any = None` — host-only; excluded from `model_dump()` / snapshots
 
 ### `StateMachine`
 
@@ -249,6 +273,8 @@ Defaults to `Coordinator()` and no juniors. No process-global singleton.
 - `agents() -> list[AgentHandle]`
 - `set_streaming_callback(callback: StreamingCallback) -> None`
 - `orchestration_tools() -> list` — callables + OpenAI schemas for the coordinator runner
+- `to_model() -> StateMachineModel` — snapshot (no live runners or callbacks)
+- `StateMachine.from_model(model, *, runners, coordinator_runner=None, streaming_callback=None) -> StateMachine`
 
 **Last-resort (tests / debugging)**
 
@@ -262,7 +288,7 @@ Defaults to `Coordinator()` and no juniors. No process-global singleton.
 
 ### `AgentHandle`
 
-Runtime handle for one registered junior.
+Pydantic model. Runtime handle for one registered junior.
 
 - `spec: AgentSpec`
 - `slots: list[ObjectiveSlot] = []`
@@ -274,7 +300,7 @@ Runtime handle for one registered junior.
 
 ### `ObjectiveSlot`
 
-Dataclass. One commissioned objective.
+Pydantic model. One commissioned objective.
 
 - `index: int` — 1-based
 - `agent: str`
@@ -284,7 +310,7 @@ Dataclass. One commissioned objective.
 - `messages: list[dict[str, Any]] = []` — junior thread
 - `agent_message: str | None = None` — last junior prose
 - `result: dict[str, Any] | None = None`
-- `status: str = "pending"` — `pending | running | staged | accepted | failed`
+- `status: SlotStatus = "pending"` — `pending | running | staged | accepted | failed`
 - `model: str | None = None`
 - `duration_ms: float | None = None`
 - `commission_id: str = ""` — defaults to `"{agent}-{index}"`
@@ -329,7 +355,18 @@ Messages(messages: list[Message] | None = None)
 - `openai_tool_schema(fn, *, name=None, description=None) -> dict` — chat.completions `tools[]` entry
 - `tool_schemas(tools) -> list[dict]` — schemas for a list of callables
 - `DEFAULT_COORDINATOR_SKILL: str` — default `Coordinator.skill`
+- `state_machine_to_model(sm) -> StateMachineModel` / `state_machine_from_model(model, *, runners, ...) -> StateMachine`
+- `state_machine_to_json(sm) -> str` / `state_machine_from_json(data, *, runners, ...) -> StateMachine`
+- `agent_spec_to_model` / `agent_spec_from_model`, `coordinator_to_model` / `coordinator_from_model`, `agent_handle_to_model` / `agent_handle_from_model`, `messages_to_model` / `messages_from_model`
+
+### Snapshot models
+
+- `StateMachineModel` — `schema_version: Literal[1] = 1`, `coordinator`, `coordinator_messages`, `active_agent`, `agents`
+- `AgentSpecModel` — spec without `runner`, with `runner_id`
+- `CoordinatorModel` — coordinator without `runner`, with optional `runner_id`
+- `AgentHandleModel` — `spec: AgentSpecModel` + `slots: list[ObjectiveSlot]`
+- `ChatMessage` — OpenAI-shaped message; extra fields allowed
 
 ## License / status
 
-Early SDK (`0.3.0`). API may evolve; `sm.run` as the operator turn is the stable idea.
+Early SDK (`0.4.0`). API may evolve; `sm.run` as the operator turn is the stable idea.

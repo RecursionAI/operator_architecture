@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from operator_architecture.agent import AgentRunner
 
@@ -28,15 +29,23 @@ review their staged messages before accepting results into the core conversation
 """
 
 
-@dataclass
-class Coordinator:
+class Coordinator(BaseModel):
     """Coordinator persona — context owned by the StateMachine.
 
     If ``runner`` is set, ``StateMachine.run`` will invoke it with orchestration
     tools. If unset, the host drives orchestration via SM methods only.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     skill: str = DEFAULT_COORDINATOR_SKILL
-    runner: AgentRunner | None = None
+    runner: AgentRunner | None = Field(default=None, exclude=True)
+    runner_id: str | None = None
     model: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _default_runner_id(self) -> Coordinator:
+        if self.runner is not None and not self.runner_id:
+            self.runner_id = "coordinator"
+        return self

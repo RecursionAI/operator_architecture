@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from operator_architecture.agent import (
     AgentHandle,
     AgentRequest,
     AgentResult,
+    AgentRunner,
     AgentSpec,
     ObjectiveSlot,
 )
@@ -18,6 +19,9 @@ from operator_architecture.coordinator import Coordinator
 from operator_architecture.messages import Messages
 from operator_architecture.orchestration import attach_schema, openai_tool_schema, tool_schemas
 from operator_architecture.streaming import StreamingCallback, emit_stream
+
+if TYPE_CHECKING:
+    from operator_architecture.serialize import StateMachineModel
 
 
 class StateMachine:
@@ -62,6 +66,33 @@ class StateMachine:
 
     def set_streaming_callback(self, callback: StreamingCallback) -> None:
         self._streaming_callback = callback
+
+    # ── serialize / rehydrate ─────────────────────────────────────────
+
+    def to_model(self) -> StateMachineModel:
+        """Snapshot this machine as a Pydantic model (runners omitted)."""
+        from operator_architecture.serialize import state_machine_to_model
+
+        return state_machine_to_model(self)
+
+    @classmethod
+    def from_model(
+        cls,
+        model: StateMachineModel,
+        *,
+        runners: Mapping[str, AgentRunner],
+        coordinator_runner: AgentRunner | None = None,
+        streaming_callback: StreamingCallback = None,
+    ) -> StateMachine:
+        """Rehydrate a machine from a snapshot, rebinding host runners."""
+        from operator_architecture.serialize import state_machine_from_model
+
+        return state_machine_from_model(
+            model,
+            runners=runners,
+            coordinator_runner=coordinator_runner,
+            streaming_callback=streaming_callback,
+        )
 
     # ── discovery / status ────────────────────────────────────────────
 
